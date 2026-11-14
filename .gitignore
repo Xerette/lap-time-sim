@@ -1,2 +1,4 @@
 results/*.mat
 *.asv
+# Telemetry is downloaded from OpenF1 on first run (see run_validation.m)
+data/telemetry/
