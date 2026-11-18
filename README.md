@@ -1,4 +1,4 @@
-# Lap Time Simulator: 2025 F1 car at Silverstone (MATLAB)
+# Lap Time Simulator: 2025 F1 car and a 2026-style power unit (MATLAB)
 
 ![MATLAB](https://img.shields.io/badge/MATLAB-R2024b-orange) ![Toolboxes](https://img.shields.io/badge/toolboxes-none%20required-lightgrey) ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -7,11 +7,56 @@ question race engineers and aerodynamicists ask every day: **how much lap time i
 
 It simulates an estimated 2025-spec Formula 1 car around Silverstone's racing line, measures the
 lap time value of mass, power, tyre grip, downforce and drag, and is **validated against
-Max Verstappen's real 2025 pole lap telemetry**.
+Max Verstappen's real 2025 pole lap telemetry**. A **2026-style hybrid power unit** model then asks
+where a limited amount of battery energy should be spent on a lap.
+
+## New: 2026-style power unit, where should the battery energy go?
+
+`run_power_unit.m` swaps the single 745 kW power figure for a 2026-style split: a ~400 kW combustion
+engine plus a 350 kW MGU-K that only works while the battery has energy, with up to 8.5 MJ harvested
+per lap ([Honda: 2026 regulations](https://global.honda/en/F1/features/2026_Commentary/regulations/)).
+The chassis, tyres and aero stay the 2025 car's, so only the power unit changes.
+
+![Monza: where the MGU-K energy goes](results/monza_deployment.png)
+
+| Result | Silverstone | Monza |
+|---|---:|---:|
+| MGU-K energy needed to deploy 350 kW everywhere | 21.4 MJ | 22.0 MJ |
+| Energy braking alone recovers (MGU-K, rear axle) | **2.78 MJ** (33 % of 8.5) | **2.21 MJ** (26 %) |
+| 8.5 MJ spent from the start line until empty | 1:31.537 | 1:27.089 |
+| 8.5 MJ spent only below a speed threshold | 1:29.714 (276 km/h) | 1:25.724 (276 km/h) |
+| **What the deployment strategy is worth** | **1.82 s** | **1.36 s** |
+| Each extra MJ per lap | 0.50 s | 0.53 s |
+| Overtake mode's extra 0.5 MJ ([The Race](https://www.the-race.com/formula-1/f1-2026-new-power-unit-engine-rules-explained/)) | 0.25 s | 0.28 s |
+
+**What it shows**
+
+- **Braking cannot pay for the battery.** Even at 350 kW, braking recovers only about a third of the
+  8.5 MJ allowed at Silverstone and a quarter at Monza, which has few heavy braking zones. The rest has
+  to be harvested on throttle or while lifting, which this model does not include yet, and is why energy
+  management dominates the 2026 rules.
+- **Where the energy is spent matters as much as how much there is.** Spending it out of slow corners and
+  holding a target speed on the straights beats spending it from the start line until empty by 1.4–1.8 s
+  on the same 8.5 MJ. Energy spent at the end of a long straight mostly fights drag, whose power rises
+  with v³, so it buys little time.
+- **The naive strategy runs out about 2.3 km into the lap** and is down to engine power alone for the rest
+  of it (orange trace above).
+- **Each megajoule is worth about half a second a lap**, and overtake mode's 0.5 MJ about a quarter of a
+  second, if it is spent well.
+
+![What each megajoule is worth](results/power_unit_energy_value.png)
+
+**Model notes.** The threshold rule deploys full MGU-K power below the target speed and, above it, only the
+small top-up needed to hold that speed; the target is found by bisection so the lap uses exactly the energy
+available. Harvest is MGU-K braking power on the rear axle (42 % of braking power, capped at 350 kW and
+8.5 MJ per lap) with a 90 % battery round trip. Not modelled yet: 2026 active aero (the low-drag straight
+mode), the lower 2026 minimum mass, harvesting on throttle ("super clipping") or while lifting, and any
+speed-dependent MGU-K limits. With 2025 drag and no low-drag mode, the 400 kW engine alone holds only about
+270 km/h, so absolute lap times and top speeds are pessimistic; the comparisons between strategies are the result.
+
+## Key results (2025 car)
 
 ![Simulated speed around Silverstone](results/silverstone_map.png)
-
-## Key results
 
 | Result (Silverstone) | Value |
 |---|---|
@@ -128,12 +173,16 @@ lap-time-sim/
 ├── run_sensitivity.m     Parameter sensitivities, break-even L/D, downforce/drag map
 ├── run_validation.m      Compare with Verstappen's 2025 pole lap (OpenF1 telemetry)
 ├── run_calibration.m     Fit grip, downforce and drag to the real lap
+├── run_power_unit.m      2026-style power unit: energy balance, deployment strategy, value per MJ
 ├── cars/
-│   └── car_f1_2025.m     Vehicle parameters (estimates)
+│   ├── car_f1_2025.m     Vehicle parameters (estimates)
+│   └── car_f1_2026_pu.m  Same car with ICE + MGU-K + battery energy limits
 ├── src/
 │   ├── load_track.m      Racing line -> evenly spaced points + curvature
 │   ├── apex_speed.m      Cornering speed limit
 │   ├── simulate_lap.m    Forward/backward passes, lap time
+│   ├── simulate_lap_pu.m Same with ICE + MGU-K, deployment rules, harvest and battery energy
+│   ├── solve_deployment.m  Bisection: spend exactly the energy available
 │   ├── get_openf1_lap.m  Download and cache a real lap from OpenF1
 │   ├── compare_to_telemetry.m  Align sim and real laps, corner table, time delta
 │   └── plot_*.m          Figures
@@ -150,11 +199,15 @@ Requires base MATLAB only (developed in R2024b; no toolboxes).
 3. Run `run_sensitivity.m` for the parameter study and aero map (441 laps).
 4. Run `run_validation.m` to download the real lap (internet needed the first time; cached in `data/telemetry/`) and compare.
 5. Run `run_calibration.m` to fit μ, CL·A and CD·A to the real lap.
+6. Run `run_power_unit.m` for the 2026 power unit study (about 10 s; prints a summary and saves the plots
+   and `results/power_unit_summary.csv`).
 
 To try another car, copy `cars/car_f1_2025.m`. To try Monza, change the track settings at the top of `run_lap.m`.
 
 ## Limitations and next steps
 
+- **Power unit.** Harvesting on throttle ("super clipping") and lift-and-coast, 2026 active aero, and a true
+  optimal-control deployment (per-corner energy allocation) instead of a single speed threshold.
 - **Racing line from real data.** Build the line from the real car's position data (OpenF1 `location`) instead of the
   dataset line, then re-run the calibration. This targets the largest error found above.
 - **Tyre and vehicle model.** Load-sensitive grip, front and rear axles, load transfer and aero balance
